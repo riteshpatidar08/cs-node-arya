@@ -56,6 +56,7 @@ server2.listen(5000, () => {
 });
 
 //listener
+//as a logger
 server2.on('request', (req) => {
   console.log(`req hit on ${req.url} method : ${req.method}`);
 });
