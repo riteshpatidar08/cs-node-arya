@@ -72,10 +72,11 @@ app.post('/users', async (req, res) => {
 
 app.get('/users', async (req, res) => {
   try {
-    const users = await User.find()
-      .limit(2)
-      .sort({ name: -1 })
-      .select('-password');
+      const {page,pagelimit} =  req.query
+    const users = await User.find().limit(pagelimit).skip((page - 1) * pagelimit)
+   
+    //   .sort({ name: -1 })
+    //   .select('-password');
     if (!users) {
       return res.status(404).json({
         messsage: 'No users found',
