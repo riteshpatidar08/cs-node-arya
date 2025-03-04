@@ -1,127 +1,151 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const app = express();
-const port = 5000;
-const fs = require('fs');
-//middleware to parse the data from the post request and set the data on the req object body property
 app.use(express.json());
+//step connect the localdatabase
+mongoose
+  .connect('mongodb://localhost:27017/crudusers')
+  .then(() => {
+    console.log('Database is connected');
+  })
+  .catch((err) => {
+    console.log(err);
+  });
 
-const verifyToken = (req, res, next) => {
-  req.user = {
-    name: 'ritesh',
-  };
-  next();
-};
-
-app.get('/verify', verifyToken, (req, res) => {
-  console.log(req.user);
-  res.send('Hello World!');
+//create a schema
+const userSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: [true, 'Name is required'],
+    min: [3, 'Name must be atleast 3 character'],
+    max: [50, 'Name must not exceed 50 characters'],
+  },
+  email: {
+    type: String,
+    required: [true, 'Email is required'],
+    unique: true,
+  },
+  password: {
+    type: String,
+    required: [true, 'password is required'],
+  },
+  salary: {
+    type: Number,
+  },
 });
 
-//read
-//utility fn to read file data
-function readFileData() {
-  return JSON.parse(fs.readFileSync('./posts.json', 'utf-8'));
-}
+const User = mongoose.model('users', userSchema);
 
-function writeFileData(data) {
-  return fs.writeFileSync('./posts.json', JSON.stringify(data));
-}
+//   const insertData = async( ) => {
+//     const newUser = await User.create({name : 43234})
+//     console.log(newUser)
+//   }
 
-//READ //get
+//   insertData()
 
-app.get('/posts', (req, res) => {
-  const { category, id } = req.query;
-  console.log(category);
+app.post('/users', async (req, res) => {
+  try {
+    const { name, email, password, salary } = req.body;
+    // console.log(typeof name)
+    if (!email || !password || !name || !salary) {
+      return res.status(400).json({
+        message: 'all fields are required',
+      });
+    }
 
-  const data = readFileData();
-  const filteredData = data.filter((d) => {
-    return d.category === category;
-  });
-  if (!data) {
+    const user = await User.findOne({ email });
+
+    if (user) {
+      return res.status(400).json({
+        message: 'email is already exists',
+      });
+    }
+
+    const newUser = await User.create({ name, email, password, salary });
+
+    res.status(201).json({
+      message: 'User created',
+      data: newUser,
+    });
+  } catch (error) {}
+});
+
+app.get('/users', async (req, res) => {
+  try {
+    const users = await User.find()
+      .limit(2)
+      .sort({ name: -1 })
+      .select('-password');
+    if (!users) {
+      return res.status(404).json({
+        messsage: 'No users found',
+      });
+    }
+    const totalCount = await User.countDocuments();
+    res.status(200).json({
+      message: 'Users fetched successfully',
+      totalResults: users.length,
+      totalCount,
+      data: users,
+    });
+  } catch (error) {}
+});
+
+app.get('/users/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const user = await User.findById(id);
+    if (!user) {
+      //   return res.status(404).json({
+      //     messsage: 'No user found',
+      //   });
+      throw new Error('No user found');
+    }
+    res.status(200).json({
+      data: user,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.put('/users/:id', async (req, res) => {
+  const { name } = req.body;
+  const { id } = req.params;
+  const newUser = await User.findByIdAndUpdate(id, { name }, { new: true });
+
+  if (!newUser) {
     return res.status(404).json({
-      message: 'No posts found',
+      message: 'No user updated',
     });
   }
-  //successfull
   res.status(200).json({
-    length: data.length,
-    message: 'Posts fetched Successfully',
-    data: category ? filteredData : data,
+    data: newUser,
   });
 });
 
-//single data
-app.get('/posts/:id', (req, res) => {
-  const { id } = req.params;
-  const data = readFileData();
-  if (!data) {
-    return res.status(404).json({
-      message: 'No posts found',
+app.delete('/users/:id', async (req, res) => {
+  try {
+    const user = await User.findByIdAndDelete(req.params.id);
+    res.status(200).json({
+      message: `User for this ${user.email} deleted`,
     });
-  }
-  const filteredData = data.filter((d) => {
-    return d.id === parseInt(id);
-  });
-  res.status(200).json({
-    length: filteredData.length,
-    message: 'details fetched successfully',
-    data: filteredData,
-  });
+  } catch (error) {}
 });
 
-//i want to send data from the client to server
-
-app.post('/posts', (req, res) => {
-  const newpost = req.body;
-  const data = readFileData();
-  //get the id of the last post
-  const newId = data[data.length - 1].id + 1;
-  console.log(newId);
-
-  newpost.id = newId;
-  data.push(newpost);
-  writeFileData(data);
-
-  res.status(200).json({
-    data: newpost,
+app.use((err, req, res, next) => {
+  console.log(err.message);
+  res.status(400).json({
+    message: err.message,
   });
 });
-
-app.put('/posts/:id', (req, res) => {
-  const { id } = req.params;
-  const newData = req.body;
-  const data = readFileData();
-  const index = data.findIndex((d) => d.id === parseInt(id));
-
-  const updatedData = { ...data[index], ...newData };
-
-  data[index] = updatedData;
-  writeFileData(data);
-  res.status(200).json({
-    data,
-  });
-});
-
-//no route found
+//handling unmatched route
 app.use((req, res) => {
-  res.status(404).json({
-    message: 'No route found , Try another',
+  return res.status(404).json({
+    message: `The requested ${req.url} is not found`,
   });
 });
 
-app.listen(port, () => {
-  console.log(`Example app listening on port ${port}`);
+app.listen(3000, () => {
+  console.log('Server is running');
 });
-
-// data => parse => req.body <= get data from here
-
-// create a new file save some data in it get the data from the file using fs module and get the path using path module and send the data to the api endpoint '/data'
-
-//CRUD => create read update delete
-
-//pagination ui
-//tree file folder structure
-//modal
-//drag and drop
-//dark mode
-//form validation
